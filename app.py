@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import pandas as pd
 from datetime import datetime, time
 import streamlit as st
+from supabase import create_client, Client  # Importando o cliente do Supabase
 from auth import verificar_login, cadastrar_usuario
 from streamlit_extras.metric_cards import style_metric_cards
 from streamlit_extras.grid import grid
@@ -13,6 +14,12 @@ import numpy as np
 # Carregar a chave da API da Alpha Vantage do arquivo .env
 load_dotenv()
 API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+
+# Configuração do Supabase
+url = os.getenv("SUPABASE_URL")  # Sua URL do Supabase
+key = os.getenv("SUPABASE_KEY")  # Sua chave do Supabase
+
+supabase: Client = create_client(url, key)
 
 # Função para buscar dados da Alpha Vantage
 def obter_cotacao_acao(symbol, start_date, end_date):
@@ -50,17 +57,24 @@ def tela_login():
         else:
             st.error("Usuário ou senha incorretos.")
 
+
 # Função de cadastro
 def tela_cadastro():
     st.title("📝 Cadastro de Novo Usuário")
     novo_usuario = st.text_input("Novo Usuário")
     nova_senha = st.text_input("Nova Senha", type="password")
-    if st.button("Cadastrar"):
-        if cadastrar_usuario(novo_usuario, nova_senha):
-            st.success("Usuário cadastrado! Faça login.")
+    
+    # Chamada para tentar cadastrar
+    if st.button("Cadastrar", type="primary"):
+        if not novo_usuario or not nova_senha:
+            st.warning("Preencha todos os campos.")
+        elif verificar_usuario_existe(novo_usuario):
+            st.error("Usuário já existe. Escolha outro nome.")
+        elif cadastrar_usuario(novo_usuario, nova_senha):
+            st.success("Usuário cadastrado com sucesso! Faça login.")
         else:
-            st.error("Usuário já existe.")
-
+            st.error("Erro ao cadastrar o usuário. Verifique se a política RLS permite a inserção.")
+            
 # Função para configurar a barra lateral
 def build_sidebar():
     st.markdown("# 📈 Projeto em Python para Investidores")
@@ -93,6 +107,7 @@ def build_sidebar():
             return selected_tickers, df_prices
 
     return None, None
+
 
 # Função para exibir os dados principais
 def build_main(tickers, prices):
@@ -145,6 +160,19 @@ def build_main(tickers, prices):
         "Retorno (%)": (norm_prices.iloc[-1] / norm_prices.iloc[0] - 1) * 100
     }).round(2)
     st.dataframe(tabela)
+
+
+# Função para verificar se o usuário já existe no banco de dados
+def verificar_usuario_existe(usuario):
+    try:
+        response = supabase.table('usuarios').select('usuario').eq('usuario', usuario).execute()
+        dados = response.data or []
+        return len(dados) > 0
+    except Exception as e:
+        st.error(f"Erro ao verificar usuário: {e}")
+        return False
+
+
 
 # Função principal que executa o app
 if "logado" not in st.session_state:
