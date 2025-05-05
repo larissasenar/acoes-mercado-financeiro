@@ -4,10 +4,52 @@ import numpy as np
 import yfinance as yf
 import plotly.express as px
 from datetime import datetime
+from auth import verificar_login, cadastrar_usuario
 from streamlit_extras.metric_cards import style_metric_cards
 from streamlit_extras.grid import grid
 
 st.set_page_config(layout="wide")
+
+#login
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+
+def tela_login():
+    st.title("🔐 Login")
+    usuario = st.text_input("Usuário")
+    senha = st.text_input("Senha", type="password")
+    if st.button("Entrar"):
+        if verificar_login(usuario, senha):
+            st.success("Login realizado com sucesso!")
+            st.session_state.logado = True
+            st.session_state.usuario = usuario
+        else:
+            st.error("Usuário ou senha incorretos.")
+
+def tela_cadastro():
+    st.title("📝 Cadastro de Novo Usuário")
+    novo_usuario = st.text_input("Novo Usuário")
+    nova_senha = st.text_input("Nova Senha", type="password")
+    if st.button("Cadastrar"):
+        if cadastrar_usuario(novo_usuario, nova_senha):
+            st.success("Usuário cadastrado! Faça login.")
+        else:
+            st.error("Usuário já existe.")
+
+aba = st.sidebar.radio("Navegação", ["Login", "Cadastro"])
+
+if not st.session_state.logado:
+    if aba == "Login":
+        tela_login()
+    else:
+        tela_cadastro()
+    st.stop()  #não seja carregue sem login
+
+#o app principal é carregado
+st.sidebar.success(f"Usuário: {st.session_state.usuario}")
+st.sidebar.markdown("---")
+
+#funções do app
 
 def build_sidebar():
     st.markdown("# 📈 Projeto em Python para Investidores")
@@ -19,7 +61,6 @@ def build_sidebar():
     selected_tickers = [label.split("(")[-1].replace(")", "") for label in selected_labels]
     tickers = [t + ".SA" for t in selected_tickers]
 
-    # Tipo de preço fixo como "Close"
     price_col = "Close"
 
     start_date = st.date_input("De", format="DD/MM/YYYY", value=datetime(2023, 1, 2))
@@ -129,7 +170,7 @@ def build_main(tickers, prices):
     }).round(2)
     st.dataframe(tabela)
 
-# Executa app
+# Executa app principal
 with st.sidebar:
     tickers, prices, price_col = build_sidebar()
 
