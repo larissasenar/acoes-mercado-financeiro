@@ -1,19 +1,39 @@
-import streamlit as st
+import os
+import requests
+from dotenv import load_dotenv
 import pandas as pd
-import numpy as np
-import yfinance as yf
-import plotly.express as px
 from datetime import datetime
-from auth import verificar_login, cadastrar_usuario
+import streamlit as st
+from auth import verificar_login, cadastrar_usuario  # Sua implementação de login
 from streamlit_extras.metric_cards import style_metric_cards
 from streamlit_extras.grid import grid
+import plotly.express as px
+import numpy as np
 
-st.set_page_config(layout="wide")
+# Carregar a chave da API da Alpha Vantage do arquivo .env
+load_dotenv()
+API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
-#login
-if "logado" not in st.session_state:
-    st.session_state.logado = False
+# Função para buscar dados da Alpha Vantage
+def obter_cotacao_acao(symbol, start_date, end_date):
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={API_KEY}"
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        dados = response.json()
+        if "Time Series (Daily)" in dados:
+            time_series = dados["Time Series (Daily)"]
+            data = []
+            for date, values in time_series.items():
+                date = datetime.strptime(date, "%Y-%m-%d")
+                if start_date <= date <= end_date:
+                    data.append([date, float(values["4. close"])])
+            df = pd.DataFrame(data, columns=["Date", "Close"])
+            df.set_index("Date", inplace=True)
+            return df
+    return None
 
+# Função de login
 def tela_login():
     st.title("🔐 Login")
     usuario = st.text_input("Usuário")
@@ -26,6 +46,7 @@ def tela_login():
         else:
             st.error("Usuário ou senha incorretos.")
 
+# Função de cadastro
 def tela_cadastro():
     st.title("📝 Cadastro de Novo Usuário")
     novo_usuario = st.text_input("Novo Usuário")
@@ -36,21 +57,7 @@ def tela_cadastro():
         else:
             st.error("Usuário já existe.")
 
-aba = st.sidebar.radio("Navegação", ["Login", "Cadastro"])
-
-if not st.session_state.logado:
-    if aba == "Login":
-        tela_login()
-    else:
-        tela_cadastro()
-    st.stop()  #não seja carregue sem login
-
-#o app principal é carregado
-st.sidebar.success(f"Usuário: {st.session_state.usuario}")
-st.sidebar.markdown("---")
-
-#funções do app
-
+# Função para configurar a barra lateral
 def build_sidebar():
     st.markdown("# 📈 Projeto em Python para Investidores")
 
@@ -61,45 +68,29 @@ def build_sidebar():
     selected_tickers = [label.split("(")[-1].replace(")", "") for label in selected_labels]
     tickers = [t + ".SA" for t in selected_tickers]
 
-    price_col = "Close"
-
     start_date = st.date_input("De", format="DD/MM/YYYY", value=datetime(2023, 1, 2))
     end_date = st.date_input("Até", format="DD/MM/YYYY", value=datetime.today())
 
     if start_date > end_date:
         st.error("Data inicial não pode ser maior que a data final.")
-        return None, None, None
+        return None, None
 
     if tickers:
-        df_prices = yf.download(tickers, start=start_date, end=end_date)
-
-        if isinstance(df_prices.columns, pd.MultiIndex):
-            if price_col in df_prices.columns.levels[0]:
-                prices = df_prices[price_col].copy()
+        prices = {}
+        for ticker in tickers:
+            df_prices = obter_cotacao_acao(ticker, start_date, end_date)
+            if df_prices is not None:
+                prices[ticker] = df_prices["Close"]
             else:
-                st.error(f"Coluna '{price_col}' não disponível nos dados.")
-                return None, None, None
-        else:
-            if price_col in df_prices.columns:
-                prices = df_prices[[price_col]].copy()
-                prices.columns = [selected_tickers[0]]
-            else:
-                st.error(f"Coluna '{price_col}' não disponível nos dados.")
-                return None, None, None
+                st.warning(f"Não foi possível carregar os dados para {ticker}")
 
-        prices.columns = [col.rstrip(".SA") for col in prices.columns]
+        if prices:
+            df_prices = pd.DataFrame(prices)
+            return selected_tickers, df_prices
 
-        try:
-            ibov = yf.download("^BVSP", start=start_date, end=end_date)[price_col]
-            prices["IBOV"] = ibov
-        except Exception:
-            st.warning("Não foi possível carregar o IBOV.")
-            prices["IBOV"] = np.nan
+    return None, None
 
-        return selected_tickers, prices, price_col
-
-    return None, None, None
-
+# Função para exibir os dados principais
 def build_main(tickers, prices):
     st.header("🧮 Pesos Personalizados")
 
@@ -123,46 +114,27 @@ def build_main(tickers, prices):
     vols = returns.std() * np.sqrt(252)
     rets = (norm_prices.iloc[-1] - 100) / 100
 
-    mygrid = grid(5, 5, 5, 5, 5, 5, vertical_align="top")
-    for t in prices.columns:
-        c = mygrid.container(border=True)
-        c.subheader(t, divider="red")
-        colA, colB, colC = c.columns(3)
-        if t == "portfolio":
-            colA.image("images/pie-chart-dollar-svgrepo-com.svg")
-        elif t == "IBOV":
-            colA.image("images/pie-chart-svgrepo-com.svg")
-        else:
-            colA.image(f"https://raw.githubusercontent.com/thefintz/icones-b3/main/icones/{t}.png", width=85)
-        colB.metric(label="Retorno", value=f"{rets[t]:.0%}")
-        colC.metric(label="Volatilidade", value=f"{vols[t]:.0%}")
-        style_metric_cards(background_color="rgba(255,255,255,0)")
+    st.subheader("📈 Desempenho Relativo")
+    st.line_chart(norm_prices, height=600)
 
-    col1, col2 = st.columns(2, gap="large")
-
-    with col1:
-        st.subheader("📈 Desempenho Relativo")
-        st.line_chart(norm_prices, height=600)
-
-    with col2:
-        st.subheader("📉 Risco-Retorno")
-        fig = px.scatter(
-            x=vols,
-            y=rets,
-            text=vols.index,
-            color=rets / vols,
-            color_continuous_scale=px.colors.sequential.Bluered_r,
-        )
-        fig.update_traces(textfont_color="white", marker=dict(size=45), textfont_size=10)
-        fig.update_layout(
-            height=600,
-            xaxis_title="Volatilidade (anualizada)",
-            yaxis_title="Retorno Total",
-            xaxis_tickformat=".0%",
-            yaxis_tickformat=".0%",
-            coloraxis_colorbar_title="Sharpe",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    st.subheader("📉 Risco-Retorno")
+    fig = px.scatter(
+        x=vols,
+        y=rets,
+        text=vols.index,
+        color=rets / vols,
+        color_continuous_scale=px.colors.sequential.Bluered_r,
+    )
+    fig.update_traces(textfont_color="white", marker=dict(size=45), textfont_size=10)
+    fig.update_layout(
+        height=600,
+        xaxis_title="Volatilidade (anualizada)",
+        yaxis_title="Retorno Total",
+        xaxis_tickformat=".0%",
+        yaxis_tickformat=".0%",
+        coloraxis_colorbar_title="Sharpe",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("📋 Tabela de Retornos Acumulados")
     tabela = pd.DataFrame({
@@ -170,9 +142,22 @@ def build_main(tickers, prices):
     }).round(2)
     st.dataframe(tabela)
 
-# Executa app principal
+# Função principal que executa o app
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+
+aba = st.sidebar.radio("Navegação", ["Login", "Cadastro"])
+
+if not st.session_state.logado:
+    if aba == "Login":
+        tela_login()
+    else:
+        tela_cadastro()
+    st.stop()  # Não seja carregado sem login
+
+# Executa o app principal
 with st.sidebar:
-    tickers, prices, price_col = build_sidebar()
+    tickers, prices = build_sidebar()
 
 st.title("📊 Python para Investidores")
 if tickers and prices is not None:
