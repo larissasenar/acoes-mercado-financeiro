@@ -74,7 +74,7 @@ def tela_cadastro():
             st.success("Usuário cadastrado com sucesso! Faça login.")
         else:
             st.error("Erro ao cadastrar o usuário. Verifique se a política RLS permite a inserção.")
-            
+
 # Função para configurar a barra lateral
 def build_sidebar():
     st.markdown("# 📈 Projeto em Python para Investidores")
@@ -110,6 +110,7 @@ def build_sidebar():
 
 
 # Função para exibir os dados principais
+# Função para exibir os dados principais
 def build_main(tickers, prices):
     st.header("🧮 Pesos Personalizados")
 
@@ -121,18 +122,24 @@ def build_main(tickers, prices):
         weights[ticker] = w
         total_weight += w
 
+    # Normalizar os pesos para que somem 1
     weights_array = np.array([weights[t] for t in tickers])
     if total_weight > 0:
         weights_array /= total_weight
 
-    carteira = prices[tickers] @ weights_array
+    # Multiplicar as colunas de prices pelos pesos
+    carteira = prices[tickers].dot(weights_array)  # Usando dot() ao invés de @
+
+    # Adicionar a carteira ao DataFrame de preços
     prices["portfolio"] = carteira
 
+    # Normalizar os preços e calcular os retornos e volatilidade
     norm_prices = 100 * prices / prices.iloc[0]
     returns = prices.pct_change().dropna()
     vols = returns.std() * np.sqrt(252)
     rets = (norm_prices.iloc[-1] - 100) / 100
 
+    # Gráficos e tabelas
     st.subheader("📈 Desempenho Relativo")
     st.line_chart(norm_prices, height=600)
 
@@ -160,6 +167,30 @@ def build_main(tickers, prices):
         "Retorno (%)": (norm_prices.iloc[-1] / norm_prices.iloc[0] - 1) * 100
     }).round(2)
     st.dataframe(tabela)
+
+    st.subheader("📋 Tabela de Retornos Diários")
+    tabela = pd.DataFrame(returns * 100).round(2)
+    st.dataframe(tabela)
+
+    st.subheader("📋 Tabela de Volatilidade")
+    tabela = pd.DataFrame(vols * 100).round(2)
+    st.dataframe(tabela)
+
+    st.subheader("📋 Tabela de Pesos")
+    tabela = pd.DataFrame(weights, index=["Peso"]).T
+    st.dataframe(tabela)
+
+    st.subheader("📋 Tabela de Preços")
+    st.dataframe(prices)
+
+    st.subheader("📋 Tabela de Preços Normalizados")
+    st.dataframe(norm_prices)
+
+    st.subheader("📋 Tabela de Retornos")
+    st.dataframe(returns)
+
+    st.subheader("📋 Tabela de Volatilidade")
+    st.dataframe(vols)
 
 
 # Função para verificar se o usuário já existe no banco de dados
