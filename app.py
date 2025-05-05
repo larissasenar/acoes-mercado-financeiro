@@ -2,9 +2,9 @@ import os
 import requests
 from dotenv import load_dotenv
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, time
 import streamlit as st
-from auth import verificar_login, cadastrar_usuario  # Sua implementação de login
+from auth import verificar_login, cadastrar_usuario
 from streamlit_extras.metric_cards import style_metric_cards
 from streamlit_extras.grid import grid
 import plotly.express as px
@@ -16,6 +16,9 @@ API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # Função para buscar dados da Alpha Vantage
 def obter_cotacao_acao(symbol, start_date, end_date):
+    start_date = datetime.combine(start_date, time.min)
+    end_date = datetime.combine(end_date, time.max)
+
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={API_KEY}"
     response = requests.get(url)
     
@@ -24,14 +27,15 @@ def obter_cotacao_acao(symbol, start_date, end_date):
         if "Time Series (Daily)" in dados:
             time_series = dados["Time Series (Daily)"]
             data = []
-            for date, values in time_series.items():
-                date = datetime.strptime(date, "%Y-%m-%d")
+            for date_str, values in time_series.items():
+                date = datetime.strptime(date_str, "%Y-%m-%d")
                 if start_date <= date <= end_date:
                     data.append([date, float(values["4. close"])])
             df = pd.DataFrame(data, columns=["Date", "Close"])
             df.set_index("Date", inplace=True)
             return df
     return None
+
 
 # Função de login
 def tela_login():
@@ -80,7 +84,7 @@ def build_sidebar():
         for ticker in tickers:
             df_prices = obter_cotacao_acao(ticker, start_date, end_date)
             if df_prices is not None:
-                prices[ticker] = df_prices["Close"]
+                prices[ticker.replace(".SA", "")] = df_prices["Close"]
             else:
                 st.warning(f"Não foi possível carregar os dados para {ticker}")
 
