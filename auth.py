@@ -1,28 +1,28 @@
-from supabase import create_client
-from hashlib import sha256
 import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import bcrypt
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+load_dotenv()
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
 
-# Função para verificar se o usuário já existe
-def verificar_usuario_existe(usuario):
-    response = supabase.table('usuarios').select('id').eq('usuario', usuario).execute()
-    return len(response.data) > 0
+def verificar_login(usuario, senha):
+    response = supabase.table('usuarios').select('*').eq('usuario', usuario).execute()
+    data = response.data
+    if data and bcrypt.checkpw(senha.encode(), data[0]['senha'].encode()):
+        return True
+    return False
 
-# Função para cadastrar usuário
 def cadastrar_usuario(usuario, senha):
+    hashed = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
     try:
-        hash_senha = sha256(senha.encode()).hexdigest()
         response = supabase.table("usuarios").insert({
             "usuario": usuario,
-            "senha": hash_senha
+            "senha": hashed
         }).execute()
         return True
     except Exception as e:
         print("Erro ao cadastrar usuário:", e)
         return False
-
-# Função de login
-def verificar_login(usuario, senha):
-    response = supabase.table('usuarios').select('id').eq('usuario', usuario).eq('senha', senha).execute()
-    return len(response.data) > 0
